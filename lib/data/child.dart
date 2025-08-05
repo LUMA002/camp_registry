@@ -5,8 +5,19 @@ class Child {
 
   Child({required this.fullName, required this.age, this.id});
 
+  // Map<String, dynamic> toMap() {
+  //   return {'id': id, 'full_name': fullName, 'age': age};
+  // }
+
   Map<String, dynamic> toMap() {
-    return {'id': id, 'full_name': fullName, 'age': age};
+    final map = <String, dynamic>{
+      'full_name': fullName,
+      'age': age,
+    };
+    if (id != null) {
+      map['id'] = id;
+    }
+    return map;
   }
 
   factory Child.fromMap(Map<String, dynamic> map) {

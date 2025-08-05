@@ -42,64 +42,114 @@ class DatabaseHelper {
 
   // CRUD for children
 
-  Future<int> insertChild(Child child) async {
-    final db = await instance.database;
-    // Якщо такий ПІБ вже є, оновлюємо вік
-    final existing = await db.query(
-      'children',
-      where: 'full_name = ?',
-      whereArgs: [child.fullName],
-    );
-    if (existing.isNotEmpty) {
-      return await db.update(
-        'children',
-        child.toMap(),
-        where: 'full_name = ?',
-        whereArgs: [child.fullName],
-      );
-    }
-    return await db.insert('children', child.toMap());
-  }
-  
-  Future<bool> isChildAlreadyPresentToday(int childId, String date) async {
+Future<int> insertChild(Child child) async {
   final db = await instance.database;
-  final result = await db.query(
-    'attendance',
-    where: 'child_id = ? AND date = ?',
-    whereArgs: [childId, date],
-  );
-  return result.isNotEmpty;
+  
+  // перевірка на дублікат 
+  final existingChild = await getChildByFullName(child.fullName);
+  if (existingChild != null) {
+    return -1; 
+  }
+  // якщо немає - додаємо
+  try {
+    return await db.insert(
+      'children',
+      child.toMap(),
+    );
+  } catch (e) {
+    if (e is DatabaseException && e.isUniqueConstraintError()) {
+      return -1; // якщо дублікат все ж стався
+    }
+    return -2; // інша помилка бази даних
+  }
 }
+  Future<bool> isChildAlreadyPresentToday(int childId, String date) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'attendance',
+      where: 'child_id = ? AND date = ?',
+      whereArgs: [childId, date],
+    );
+    return result.isNotEmpty;
+  }
 
 Future<Child?> getChildByFullName(String fullName) async {
   final db = await instance.database;
-  final result = await db.query(
-    'children',
-    where: 'full_name = ?',
-    whereArgs: [fullName],
-  );
-  if (result.isNotEmpty) {
-    return Child.fromMap(result.first);
+  // нормалізація ПІБ для порівняння
+  final normalizedInput = _normalizeFullName(fullName);
+  
+  // отримуємо всіх дітей І ПОРІВНЮЄМО НА СТОРОНІ Dart, а не SQLite
+  final allChildren = await db.query('children');
+  
+  // співпадіння 
+  for (var childMap in allChildren) {
+    final dbFullName = childMap['full_name'] as String;
+    final normalizedDb = _normalizeFullName(dbFullName);
+    
+    if (normalizedInput == normalizedDb) {
+      return Child.fromMap(childMap);
+    }
   }
+  
   return null;
 }
 
-  Future<List<Child>> getChildren() async {
-    final db = await instance.database;
-    final result = await db.query('children', orderBy: 'age ASC');
-    return result.map((map) => Child.fromMap(map)).toList();
-  }
+// для нормалізації ПІБ - SQLite некоректно працює з українськими літерами
+// метод LOWER не працює з кирилицею
+String _normalizeFullName(String fullName) {
+  String normalized = fullName.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+  normalized = normalized.toLowerCase();
+  
+  // прибираємо всі додаткові пробіли
+  normalized = normalized.split(' ')
+      .where((part) => part.isNotEmpty)
+      .join(' ');
+  
+  return normalized;
+}
+
+  // Future<List<Child>> getChildren() async {
+  //   final db = await instance.database;
+  //   final result = await db.query('children', orderBy: 'age ASC');
+  //   return result.map((map) => Child.fromMap(map)).toList();
+  // }
 
   Future<List<Child>> getChildrenByDate(String date) async {
-  final db = await instance.database;
-  final result = await db.rawQuery('''
+    final db = await instance.database;
+    final result = await db.rawQuery(
+    '''
     SELECT children.* FROM children
     INNER JOIN attendance ON children.id = attendance.child_id
     WHERE attendance.date = ?
     ORDER BY children.age ASC
-  ''', [date]);
-  return result.map((map) => Child.fromMap(map)).toList();
-}
+    ''',
+      [date],
+    );
+    return result.map((map) => Child.fromMap(map)).toList();
+  }
+
+  // отримати всі унікальні дати відвідувань (для історії)
+  Future<List<String>> getAvailableDates() async {
+    final db = await instance.database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT date FROM attendance ORDER BY date DESC',
+    );
+    return result.map((row) => row['date'] as String).toList();
+  }
+
+  // Отримати кількість дітей на конкретну дату
+  // Future<int> getChildrenCountByDate(String date) async {
+  //   final db = await instance.database;
+  //   final result = await db.rawQuery(
+  //     '''
+  //     SELECT COUNT(*) as count FROM attendance
+  //     WHERE date = ?
+  //     ''',
+  //     [date],
+  //   );
+  //   return Sqflite.firstIntValue(result) ?? 0;
+  // }
 
   Future<int> updateChild(Child child) async {
     final db = await instance.database;
@@ -119,15 +169,14 @@ Future<Child?> getChildByFullName(String fullName) async {
   //   return await db.delete('children', where: 'id = ?', whereArgs: [id]);
   // }
 
-
-Future<int> deleteAttendance(int childId, String date) async {
-  final db = await instance.database;
-  return await db.delete(
-    'attendance',
-    where: 'child_id = ? AND date = ?',
-    whereArgs: [childId, date],
-  );
-}
+  Future<int> deleteAttendance(int childId, String date) async {
+    final db = await instance.database;
+    return await db.delete(
+      'attendance',
+      where: 'child_id = ? AND date = ?',
+      whereArgs: [childId, date],
+    );
+  }
   // CRUD for attendance
 
   Future<int> insertAttendance(int childId, String date) async {
@@ -135,10 +184,10 @@ Future<int> deleteAttendance(int childId, String date) async {
     return await db.insert('attendance', {'child_id': childId, 'date': date});
   }
 
-  Future<List<Map<String, dynamic>>> getAttendanceByDate(String date) async {
-    final db = await instance.database;
-    return await db.query('attendance', where: 'date = ?', whereArgs: [date]);
-  }
+  // Future<List<Map<String, dynamic>>> getAttendanceByDate(String date) async {
+  //   final db = await instance.database;
+  //   return await db.query('attendance', where: 'date = ?', whereArgs: [date]);
+  // }
 
   Future close() async {
     final db = await instance.database;
