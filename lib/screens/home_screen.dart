@@ -1,8 +1,10 @@
+import 'package:camp_registry/utils/debouncer.dart';
 import 'package:flutter/material.dart';
 import 'package:camp_registry/data/database_helper.dart';
 import 'package:camp_registry/data/child.dart';
 import 'package:camp_registry/screens/history_screen.dart';
 import 'package:camp_registry/widgets/children_list.dart';
+import 'package:camp_registry/widgets/duplicate_name_dialog.dart';
 import 'package:intl/intl.dart';
 import 'dart:developer';
 
@@ -38,47 +40,150 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Оновлюємо метод _addChild
+
   Future<void> _addChild(String fullName, int age) async {
+    _checkCurrentDate(); // Додамо перевірку поточної дати
+
     // 1. Шукаємо дитину по ПІБ
     final existingChild = await DatabaseHelper.instance.getChildByFullName(
       fullName,
     );
 
-    int childId;
+    int? childId;
+
     if (existingChild == null) {
-      // дитини немає — додаємо в children
+      // Дитини немає — додаємо в children
       childId = await DatabaseHelper.instance.insertChild(
         Child(fullName: fullName, age: age),
       );
+
       if (childId < 0) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              childId == -1
-                  ? 'Особа з таким ПІБ вже існує!'
-                  : 'Помилка додавання особи',
-            ),
-          ),
-        );
-        return;
+
+        // Якщо помилка унікальності (хоча getChildByFullName мав би знайти)
+        if (childId == -1) {
+          // Знаходимо дублікат для показу в діалозі
+          final duplicateChild = await DatabaseHelper.instance
+              .getChildByFullName(fullName);
+          if (duplicateChild != null && duplicateChild.age != age) {
+            // Показуємо діалог тільки якщо вік відрізняється
+            if (!mounted) return;
+            final updatedName = await showDialog<String>(
+              context: context,
+              builder: (context) => DuplicateNameDialog(
+                existingFullName: duplicateChild.fullName,
+                existingAge: duplicateChild.age,
+                newAge: age,
+              ),
+            );
+
+            if (updatedName != null) {
+              // Спробуємо додати з уточненим ПІБ
+              childId = await DatabaseHelper.instance.insertChild(
+                Child(fullName: updatedName, age: age),
+              );
+
+              if (childId <= 0) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Помилка додавання особи')),
+                );
+                return;
+              }
+            } else {
+              // Користувач скасував діалог
+              return;
+            }
+          } else {
+            // Помилка, але з таким самим віком - просто показуємо повідомлення
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Особа з таким ПІБ вже існує!')),
+            );
+            return;
+          }
+        } else {
+          // Інші помилки бази даних
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Помилка додавання особи')),
+          );
+          return;
+        }
       }
     } else {
-      childId = existingChild.id!;
-      // Check attendance на сьогодні
-      final alreadyPresent = await DatabaseHelper.instance
-          .isChildAlreadyPresentToday(childId, today);
-      if (alreadyPresent) {
+      // Дитина існує — перевіряємо, чи відрізняється вік
+      if (existingChild.age != age) {
+        // Показуємо діалог для уточнення, якщо вік відрізняється
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Особа вже є у списку на сьогодні!')),
+        final updatedName = await showDialog<String>(
+          context: context,
+          builder: (context) => DuplicateNameDialog(
+            existingFullName: existingChild.fullName,
+            existingAge: existingChild.age,
+            newAge: age,
+          ),
         );
-        return;
+
+        if (updatedName != null) {
+          // Додаємо нову дитину з уточненим ПІБ
+          childId = await DatabaseHelper.instance.insertChild(
+            Child(fullName: updatedName, age: age),
+          );
+
+          if (childId <= 0) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Помилка додавання особи')),
+            );
+            return;
+          }
+        } else {
+          // Користувач скасував діалог
+          return;
+        }
+      } else {
+        // Вік однаковий, використовуємо існуючий запис
+        childId = existingChild.id!;
+
+        // Перевіряємо, чи вже є у attendance на сьогодні
+        final alreadyPresent = await DatabaseHelper.instance
+            .isChildAlreadyPresentToday(childId, today);
+        if (alreadyPresent) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Особа вже є у списку на сьогодні!')),
+          );
+          return;
+        }
       }
     }
+
     // 2. Додаємо в attendance
     await DatabaseHelper.instance.insertAttendance(childId, today);
     await _loadChildren();
+  }
+
+  // Додаємо у клас _HomeScreenState
+
+  void _checkCurrentDate() {
+    final currentDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    if (currentDate != today) {
+      setState(() {
+        today = currentDate;
+      });
+      _loadChildren();
+
+      // Показуємо повідомлення про зміну дати
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Дату оновлено на поточну: ${DateFormat('dd.MM.yyyy').format(DateTime.now())}',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _removeChild(int childId) async {
@@ -196,15 +301,75 @@ class _AddChildForm extends StatefulWidget {
 class _AddChildFormState extends State<_AddChildForm> {
   final fullNameController = TextEditingController();
   final ageController = TextEditingController();
+  final FocusNode fullNameFocusNode = FocusNode();
 
   String? _fullNameError;
   String? _ageError;
 
+  List<Child> _suggestions = [];
+  bool _isLoading = false;
+  bool _suppressSearch = false; // для надмірних запитів
+  final _debouncer = Debouncer();
+
+  @override
+  void initState() {
+    super.initState();
+    fullNameController.addListener(_onSearchChanged);
+  }
+
   @override
   void dispose() {
+    fullNameController.removeListener(_onSearchChanged);
     fullNameController.dispose();
     ageController.dispose();
+    fullNameFocusNode.dispose();
+    _debouncer.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_suppressSearch) return;
+    // Використовуємо debouncer для запобігання надмірних запитів
+    _debouncer(() async {
+      if (fullNameController.text.length >= 2) {
+        setState(() => _isLoading = true);
+
+        try {
+          final results = await DatabaseHelper.instance
+              .searchChildrenByPartialName(fullNameController.text);
+
+          if (mounted) {
+            setState(() {
+              _suggestions = results;
+              _isLoading = false;
+            });
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              _suggestions = [];
+              _isLoading = false;
+            });
+          }
+        }
+      } else {
+        setState(() => _suggestions = []);
+      }
+    });
+  }
+
+  void _selectSuggestion(Child child) {
+    _suppressSearch = true;
+    fullNameController.text = child.fullName;
+    ageController.text = child.age.toString();
+    setState(() {
+      _suggestions = [];
+      // Розблоковуємо пошук з невеликою затримкою
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _suppressSearch = false;
+      });
+    });
+    FocusScope.of(context).requestFocus(FocusNode());
   }
 
   Future<void> _validateAndAdd() async {
@@ -232,12 +397,12 @@ class _AddChildFormState extends State<_AddChildForm> {
       return;
     }
 
-    // допустимі символи (укр, латинські літери, апостроф, дефіс)
-    final nameRegExp = RegExp(r"^[a-zA-Zа-яА-ЯёЁіІїЇєЄґҐ''\- ]+$");
+    // допустимі символи (укр, латинські літери, апостроф, дефіс, круглі дужки)
+    final nameRegExp = RegExp(r"^[a-zA-Zа-яА-ЯёЁіІїЇєЄґҐ''\-()\s]+$");
     if (!nameRegExp.hasMatch(fullName)) {
       setState(
         () => _fullNameError =
-            'ПІБ може містити тільки літери, пробіли, дефіси, апострофи',
+            'ПІБ може містити тільки літери, пробіли, дефіси, апострофи, круглі дужки',
       );
       return;
     }
@@ -277,14 +442,89 @@ class _AddChildFormState extends State<_AddChildForm> {
               ],
             ),
             const SizedBox(height: 24),
-            TextField(
-              controller: fullNameController,
-              decoration: InputDecoration(
-                labelText: 'ПІБ дитини',
-                errorText: _fullNameError,
-                prefixIcon: const Icon(Icons.person, size: 22),
-              ),
-              style: const TextStyle(fontSize: 16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: fullNameController,
+                  focusNode: fullNameFocusNode,
+                  decoration: InputDecoration(
+                    labelText: 'ПІБ дитини',
+                    errorText: _fullNameError,
+                    prefixIcon: const Icon(Icons.person, size: 22),
+                    suffixIcon: _isLoading
+                        ? const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: CircularProgressIndicator(),
+                          )
+                        : fullNameController.text.isNotEmpty
+                        ? IconButton(
+                            onPressed: () {
+                              _suppressSearch = true;
+                              fullNameController.clear();
+                              setState(() {
+                                _suggestions = [];
+                                Future.delayed(
+                                  const Duration(milliseconds: 300),
+                                  () {
+                                    _suppressSearch = false;
+                                  },
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.clear, size: 22),
+                          )
+                        : null,
+                  ),
+                  style: const TextStyle(fontSize: 16),
+                ),
+                if (_suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemCount: _suggestions.length,
+                      itemBuilder: (context, index) {
+                        final suggestion = _suggestions[index];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.8),
+                            foregroundColor: Colors.white,
+                            child: const Icon(Icons.person, size: 18),
+                          ),
+                          title: Text(suggestion.fullName),
+                          subtitle: Text('Вік: ${suggestion.age}'),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 8.0,
+                          ),
+                          dense: true,
+                          onTap: () {
+                            _selectSuggestion(suggestion);
+                            // Встановлюємо фокус на поле віку після вибору підказки
+                            FocusScope.of(context).requestFocus(FocusNode());
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(

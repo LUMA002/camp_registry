@@ -36,7 +36,7 @@ class _EditChildDialogState extends State<EditChildDialog> {
     });
 
     final fullName = fullNameController.text.trim();
-    final nameRegExp = RegExp(r"^[a-zA-Zа-яА-ЯёЁіІїЇєЄ''\- ]+$");
+    final nameRegExp = RegExp(r"^[a-zA-Zа-яА-ЯёЁіІїЇєЄґҐ''\-()\s]+$");
     final ageText = ageController.text.trim();
 
     if (fullName.isEmpty || fullName.split(' ').length < 2) {
@@ -46,7 +46,7 @@ class _EditChildDialogState extends State<EditChildDialog> {
     if (!nameRegExp.hasMatch(fullName)) {
       setState(
         () => _fullNameError =
-            'ПІБ може містити тільки літери, пробіли, дефіси, апострофи',
+            'ПІБ може містити тільки літери, пробіли, дефіси, апострофи, круглі дужки',
       );
       return;
     }

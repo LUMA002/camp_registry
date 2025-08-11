@@ -42,27 +42,25 @@ class DatabaseHelper {
 
   // CRUD for children
 
-Future<int> insertChild(Child child) async {
-  final db = await instance.database;
-  
-  // перевірка на дублікат 
-  final existingChild = await getChildByFullName(child.fullName);
-  if (existingChild != null) {
-    return -1; 
-  }
-  // якщо немає - додаємо
-  try {
-    return await db.insert(
-      'children',
-      child.toMap(),
-    );
-  } catch (e) {
-    if (e is DatabaseException && e.isUniqueConstraintError()) {
-      return -1; // якщо дублікат все ж стався
+  Future<int> insertChild(Child child) async {
+    final db = await instance.database;
+
+    // перевірка на дублікат
+    final existingChild = await getChildByFullName(child.fullName);
+    if (existingChild != null) {
+      return -1;
     }
-    return -2; // інша помилка бази даних
+    // якщо немає - додаємо
+    try {
+      return await db.insert('children', child.toMap());
+    } catch (e) {
+      if (e is DatabaseException && e.isUniqueConstraintError()) {
+        return -1; // якщо дублікат все ж стався
+      }
+      return -2; // інша помилка бази даних
+    }
   }
-}
+
   Future<bool> isChildAlreadyPresentToday(int childId, String date) async {
     final db = await instance.database;
     final result = await db.query(
@@ -73,41 +71,42 @@ Future<int> insertChild(Child child) async {
     return result.isNotEmpty;
   }
 
-Future<Child?> getChildByFullName(String fullName) async {
-  final db = await instance.database;
-  // нормалізація ПІБ для порівняння
-  final normalizedInput = _normalizeFullName(fullName);
-  
-  // отримуємо всіх дітей І ПОРІВНЮЄМО НА СТОРОНІ Dart, а не SQLite
-  final allChildren = await db.query('children');
-  
-  // співпадіння 
-  for (var childMap in allChildren) {
-    final dbFullName = childMap['full_name'] as String;
-    final normalizedDb = _normalizeFullName(dbFullName);
-    
-    if (normalizedInput == normalizedDb) {
-      return Child.fromMap(childMap);
+  Future<Child?> getChildByFullName(String fullName) async {
+    final db = await instance.database;
+    // нормалізація ПІБ для порівняння
+    final normalizedInput = _normalizeFullName(fullName);
+
+    // отримуємо всіх дітей І ПОРІВНЮЄМО НА СТОРОНІ Dart, а не SQLite
+    final allChildren = await db.query('children');
+
+    // співпадіння
+    for (var childMap in allChildren) {
+      final dbFullName = childMap['full_name'] as String;
+      final normalizedDb = _normalizeFullName(dbFullName);
+
+      if (normalizedInput == normalizedDb) {
+        return Child.fromMap(childMap);
+      }
     }
+
+    return null;
   }
-  
-  return null;
-}
 
-// для нормалізації ПІБ - SQLite некоректно працює з українськими літерами
-// метод LOWER не працює з кирилицею
-String _normalizeFullName(String fullName) {
-  String normalized = fullName.trim().replaceAll(RegExp(r'\s+'), ' ');
+  // для нормалізації ПІБ - SQLite некоректно працює з українськими літерами
+  // метод LOWER не працює з кирилицею
+  String _normalizeFullName(String fullName) {
+    String normalized = fullName.trim().replaceAll(RegExp(r'\s+'), ' ');
 
-  normalized = normalized.toLowerCase();
-  
-  // прибираємо всі додаткові пробіли
-  normalized = normalized.split(' ')
-      .where((part) => part.isNotEmpty)
-      .join(' ');
-  
-  return normalized;
-}
+    normalized = normalized.toLowerCase();
+
+    // прибираємо всі додаткові пробіли
+    normalized = normalized
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .join(' ');
+
+    return normalized;
+  }
 
   // Future<List<Child>> getChildren() async {
   //   final db = await instance.database;
@@ -118,7 +117,7 @@ String _normalizeFullName(String fullName) {
   Future<List<Child>> getChildrenByDate(String date) async {
     final db = await instance.database;
     final result = await db.rawQuery(
-    '''
+      '''
     SELECT children.* FROM children
     INNER JOIN attendance ON children.id = attendance.child_id
     WHERE attendance.date = ?
@@ -138,6 +137,26 @@ String _normalizeFullName(String fullName) {
     return result.map((row) => row['date'] as String).toList();
   }
 
+  Future<List<Child>> searchChildrenByPartialName(String partialName) async {
+    if (partialName.isEmpty || partialName.length < 2) return [];
+
+    final db = await instance.database;
+    final normalizedInput = _normalizeFullName(partialName);
+
+    // Отримуємо всіх дітей
+    final allChildren = await db.query('children');
+
+    // Фільтруємо на стороні Dart для кращої роботи з українською
+    final filteredChildren = allChildren.where((childMap) {
+      final dbFullName = childMap['full_name'] as String;
+      final normalizedDb = _normalizeFullName(dbFullName);
+
+      return normalizedDb.contains(normalizedInput);
+    }).toList();
+
+    return filteredChildren.map((map) => Child.fromMap(map)).toList();
+  }
+
   // Отримати кількість дітей на конкретну дату
   // Future<int> getChildrenCountByDate(String date) async {
   //   final db = await instance.database;
@@ -153,6 +172,27 @@ String _normalizeFullName(String fullName) {
 
   Future<int> updateChild(Child child) async {
     final db = await instance.database;
+
+    // Перевірка, чи існує дитина з таким же ім'ям, але іншим ID
+    final allChildren = await db.query(
+      'children',
+      where: 'id != ?',
+      whereArgs: [child.id],
+    );
+
+    final normalizedNewName = _normalizeFullName(child.fullName);
+
+    // Перевіряємо на співпадіння з нормалізацією
+    for (var existingChild in allChildren) {
+      final existingName = existingChild['full_name'] as String;
+      final normalizedExisting = _normalizeFullName(existingName);
+
+      if (normalizedNewName == normalizedExisting) {
+        return 0; // Дитина з таким ім'ям вже існує
+      }
+    }
+
+    // Якщо дублікатів не знайдено, оновлюємо запис
     return await db.update(
       'children',
       child.toMap(),
