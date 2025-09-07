@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'child.dart';
+import 'dart:developer';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -16,6 +17,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
+    log('DB PATH: $dbPath');
     final path = join(dbPath, filePath);
 
     return await openDatabase(path, version: 1, onCreate: _createDB);
@@ -229,8 +231,8 @@ class DatabaseHelper {
   //   return await db.query('attendance', where: 'date = ?', whereArgs: [date]);
   // }
 
-  Future close() async {
-    final db = await instance.database;
-    db.close();
-  }
+  // Future close() async {
+  //   final db = await instance.database;
+  //   db.close();
+  // }
 }

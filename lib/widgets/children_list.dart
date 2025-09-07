@@ -5,7 +5,8 @@ import 'package:camp_registry/widgets/edit_child_dialog.dart';
 class ChildrenList extends StatelessWidget {
   final List<Child> children;
   final Future<void> Function(int childId)? onDelete;
-  final Future<void> Function(Child child, String newFullName, int newAge)? onEdit;
+  final Future<void> Function(Child child, String newFullName, int newAge)?
+  onEdit;
   final bool showActions;
 
   const ChildrenList({
@@ -29,15 +30,19 @@ class ChildrenList extends StatelessWidget {
                     Icon(
                       Icons.person_off_outlined,
                       size: 48,
-                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       'Немає дітей у списку',
                       style: TextStyle(
-                        fontSize: 18, 
+                        fontSize: 18,
                         fontStyle: FontStyle.italic,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -51,7 +56,9 @@ class ChildrenList extends StatelessWidget {
                 final child = children[index];
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.8),
                     foregroundColor: Colors.white,
                     child: Text(
                       '${index + 1}',
@@ -87,12 +94,18 @@ class ChildrenList extends StatelessWidget {
                                   color: Theme.of(context).colorScheme.primary,
                                   tooltip: 'Редагувати',
                                   onPressed: () async {
-                                    final result = await showDialog<Map<String, dynamic>>(
-                                      context: context,
-                                      builder: (context) => EditChildDialog(child: child),
-                                    );
+                                    final result =
+                                        await showDialog<Map<String, dynamic>>(
+                                          context: context,
+                                          builder: (context) =>
+                                              EditChildDialog(child: child),
+                                        );
                                     if (result != null) {
-                                      await onEdit!(child, result['fullName'], result['age']);
+                                      await onEdit!(
+                                        child,
+                                        result['fullName'],
+                                        result['age'],
+                                      );
                                     }
                                   },
                                 ),

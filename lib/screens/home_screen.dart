@@ -40,10 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Оновлюємо метод _addChild
-
   Future<void> _addChild(String fullName, int age) async {
-    _checkCurrentDate(); // Додамо перевірку поточної дати
+    _checkCurrentDate(); // перевірка поточної дати
 
     // 1. Шукаємо дитину по ПІБ
     final existingChild = await DatabaseHelper.instance.getChildByFullName(
@@ -61,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (childId < 0) {
         if (!mounted) return;
 
-        // Якщо помилка унікальності (хоча getChildByFullName мав би знайти)
+        // якщо помилка унікальності
         if (childId == -1) {
           // Знаходимо дублікат для показу в діалозі
           final duplicateChild = await DatabaseHelper.instance
@@ -79,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
             );
 
             if (updatedName != null) {
-              // Спробуємо додати з уточненим ПІБ
+              // Спроба додати з уточненим ПІБ
               childId = await DatabaseHelper.instance.insertChild(
                 Child(fullName: updatedName, age: age),
               );
@@ -92,11 +90,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 return;
               }
             } else {
-              // Користувач скасував діалог
+              // скасувавання діалогу
               return;
             }
           } else {
-            // Помилка, але з таким самим віком - просто показуємо повідомлення
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Особа з таким ПІБ вже існує!')),
@@ -104,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return;
           }
         } else {
-          // Інші помилки бази даних
+          // Інші помилки БД
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Помилка додавання особи')),
           );
@@ -112,9 +109,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } else {
-      // Дитина існує — перевіряємо, чи відрізняється вік
+      // Дитина існує та перевіряємо вік
       if (existingChild.age != age) {
-        // Показуємо діалог для уточнення, якщо вік відрізняється
+        // якщо вік відрізняється - показуємо діалог для уточнення
         if (!mounted) return;
         final updatedName = await showDialog<String>(
           context: context,
@@ -139,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return;
           }
         } else {
-          // Користувач скасував діалог
+          // Скасування діалогу
           return;
         }
       } else {
@@ -164,8 +161,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadChildren();
   }
 
-  // Додаємо у клас _HomeScreenState
-
   void _checkCurrentDate() {
     final currentDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
     if (currentDate != today) {
@@ -174,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       _loadChildren();
 
-      // Показуємо повідомлення про зміну дати
+      // повідомлення про зміну дати
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -329,7 +324,7 @@ class _AddChildFormState extends State<_AddChildForm> {
 
   void _onSearchChanged() {
     if (_suppressSearch) return;
-    // Використовуємо debouncer для запобігання надмірних запитів
+    //Використ. debouncer для запобігання надмірних запитів
     _debouncer(() async {
       if (fullNameController.text.length >= 2) {
         setState(() => _isLoading = true);
@@ -364,7 +359,7 @@ class _AddChildFormState extends State<_AddChildForm> {
     ageController.text = child.age.toString();
     setState(() {
       _suggestions = [];
-      // Розблоковуємо пошук з невеликою затримкою
+      // розблоковуємо пошук з невеликою затримкою
       Future.delayed(const Duration(milliseconds: 300), () {
         _suppressSearch = false;
       });
@@ -514,7 +509,7 @@ class _AddChildFormState extends State<_AddChildForm> {
                             horizontal: 16.0,
                             vertical: 8.0,
                           ),
-                          dense: true,
+                          //dense: true,
                           onTap: () {
                             _selectSuggestion(suggestion);
                             // Встановлюємо фокус на поле віку після вибору підказки
